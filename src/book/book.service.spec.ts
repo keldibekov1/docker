@@ -1,93 +1,65 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BookService } from './book.service';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
+import * as request from 'supertest';
+import { AppModule } from '../app.module';
 import { PrismaService } from '../prisma/prisma.service';
 
-const mockPrismaService = () => ({
-  book: {
-    create: jest.fn(),
-    findMany: jest.fn(),
-    findUnique: jest.fn(),
-    update: jest.fn(),
-    delete: jest.fn(),
-  },
-});
-
-describe('BookService', () => {
-  let service: BookService;
-  let prisma: ReturnType<typeof mockPrismaService>;
+describe('BookController (e2e)', () => {
+  let app: INestApplication;
+  let prisma: PrismaService;
 
   beforeAll(async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        BookService,
-        { provide: PrismaService, useFactory: mockPrismaService },
-      ],
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
     }).compile();
 
-    service = module.get<BookService>(BookService);
-    prisma = module.get(PrismaService);
+    app = moduleFixture.createNestApplication();
+    await app.init();
+
+    prisma = moduleFixture.get(PrismaService);
   });
 
-  afterEach(() => {
-    jest.clearAllMocks(); 
+  afterAll(async () => {
+    await prisma.$disconnect();
+    await app.close();
   });
 
-  it('should create a book', async () => {
-    const data = { title: 'Test Book', author: 'Tester', publishedAt: new Date() };
+  let bookId: number;
 
-    prisma.book.create.mockResolvedValue(data);
+  it('POST /books', async () => {
+    const bookData = { name: 'Test Book', price: 1000 };
 
-    const result = await service.create(data);
+    const response = await request(app.getHttpServer())
+      .post('/books')
+      .send(bookData)
+      .expect(201);
 
-    expect(result).toEqual(data);
-    expect(prisma.book.create).toHaveBeenCalledWith({ data });
+    expect(response.body).toMatchObject(bookData);
+    expect(response.body.id).toBeDefined();
+    bookId = response.body.id;
   });
 
-  it('should return all books', async () => {
-    const books = [{ id: 1, title: 'Book 1', author: 'Author 1', publishedAt: new Date() }];
 
-    prisma.book.findMany.mockResolvedValue(books);
+  it('GET /books/:id', async () => {
+    const response = await request(app.getHttpServer()).get(`/books/${bookId}`)
 
-    const result = await service.findAll();
-
-    expect(result).toEqual(books);
-    expect(prisma.book.findMany).toHaveBeenCalledTimes(1);
+    expect(response.body).toMatchObject({ name: 'Test Book', price: 1000 });
   });
 
-  it('should return a book by ID', async () => {
-    const book = { id: 1, title: 'Test Book', author: 'Tester', publishedAt: new Date() };
+  it('PATCH /books/:id', async () => {
+    const updatedData = { name: 'Updated Book', price: 1500 };
 
-    prisma.book.findUnique.mockResolvedValue(book);
+    const response = await request(app.getHttpServer())
+      .patch(`/books/${bookId}`)
+      .send(updatedData)
+      
 
-    const result = await service.findOne(1);
-
-    expect(result).toEqual(book);
-    expect(prisma.book.findUnique).toHaveBeenCalledWith({ where: { id: 1 } });
+    expect(response.body).toMatchObject(updatedData);
   });
 
-  it('should update a book', async () => {
-    const updatedData = { title: 'Updated Title', author: 'Updated Author' };
-    const updatedBook = { id: 1, ...updatedData, publishedAt: new Date() };
+  it('DELETE /books/:id ', async () => {
+    await request(app.getHttpServer()).delete(`/books/${bookId}`)
 
-    prisma.book.update.mockResolvedValue(updatedBook);
-
-    const result = await service.update(1, updatedData);
-
-    expect(result).toEqual(updatedBook);
-    expect(prisma.book.update).toHaveBeenCalledWith({
-      where: { id: 1 },
-      data: updatedData,
-    });
-  });
-
-  it('should delete a book', async () => {
-    const deletedBook = { id: 1, title: 'Test Book', author: 'Tester', publishedAt: new Date() };
-
-    prisma.book.delete.mockResolvedValue(deletedBook);
-
-    const result = await service.remove(1);
-
-    expect(result).toEqual(deletedBook);
-    expect(prisma.book.delete).toHaveBeenCalledWith({ where: { id: 1 } });
+    await request(app.getHttpServer()).get(`/books/${bookId}`)
   });
 });

@@ -16,7 +16,6 @@ datasource db {
 
 model Book {
   id        Int     @id @default(autoincrement())
-  title     String
-  author    String
-  publishedAt DateTime
+  name     String
+  price    Int
 }
